@@ -9,6 +9,7 @@ import "./EtherRouter.sol";
 import "./ERC20Extended.sol";
 import "./ColonyNetworkStorage.sol";
 import "./IColonyNetwork.sol";
+import "./PatriciaTree/PatriciaTree.sol";
 
 
 contract ColonyNetworkStaking is ColonyNetworkStorage, DSMath {
@@ -125,7 +126,7 @@ contract ColonyNetworkStaking is ColonyNetworkStorage, DSMath {
 // TODO: Can we handle a dispute regarding the very first hash that should be set?
 
 
-contract ReputationMiningCycle {
+contract ReputationMiningCycle is PatriciaTree {
   address colonyNetworkAddress;
   // TODO: Do we need both these mappings?
   mapping (bytes32 => mapping( uint256 => address[])) public submittedHashes;

@@ -77,10 +77,8 @@ module.exports = {
       if (err.message.indexOf("VM Exception while processing transaction: revert") === -1) {
         throw err;
       }
-
       txHash = await this.web3GetFirstTransactionHashFromLastBlock();
     }
-
     const receipt = await this.web3GetTransactionReceipt(txHash);
     // Check the receipt `status` to ensure transaction failed.
     assert.equal(receipt.status, 0x00);
