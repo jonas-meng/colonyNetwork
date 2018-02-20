@@ -68,7 +68,7 @@ export async function setupUpgradableToken(token, resolver, etherRouter) {
   const deployedImplementations = {};
   deployedImplementations.Token = token.address;
   await setupEtherRouter("ERC20Extended", deployedImplementations, resolver);
-
+  
   await etherRouter.setResolver(resolver.address);
   const registeredResolver = await etherRouter.resolver.call();
   assert.equal(registeredResolver, resolver.address);
@@ -89,10 +89,11 @@ export async function setupColonyVersionResolver(colony, colonyTask, colonyFundi
   assert.equal(version, currentColonyVersion.toNumber());
 }
 
-export async function setupUpgradableColonyNetwork(etherRouter, resolver, colonyNetwork, colonyNetworkStaking) {
+export async function setupUpgradableColonyNetwork(etherRouter, resolver, colonyNetwork, colonyNetworkStaking, colonyNetworkAuction) {
   const deployedImplementations = {};
   deployedImplementations.ColonyNetwork = colonyNetwork.address;
   deployedImplementations.ColonyNetworkStaking = colonyNetworkStaking.address;
+  deployedImplementations.ColonyNetworkAuction = colonyNetworkAuction.address;
 
   await setupEtherRouter("IColonyNetwork", deployedImplementations, resolver);
 

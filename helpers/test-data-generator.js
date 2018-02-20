@@ -26,7 +26,7 @@ const Token = artifacts.require("Token");
 export async function setupAssignedTask({
   colonyNetwork,
   colony,
-  dueDate = currentBlockTime(),
+  dueDate,
   domain = 1,
   skill = 0,
   evaluator = EVALUATOR,
@@ -45,7 +45,12 @@ export async function setupAssignedTask({
   }
   await colony.setTaskRoleUser(taskId, EVALUATOR_ROLE, evaluator);
   await colony.setTaskRoleUser(taskId, WORKER_ROLE, worker);
-  const txData = await colony.contract.setTaskDueDate.getData(taskId, dueDate);
+
+  let dueDateTimestamp = dueDate;
+  if (!dueDateTimestamp) {
+    dueDateTimestamp = await currentBlockTime();
+  }
+  const txData = await colony.contract.setTaskDueDate.getData(taskId, dueDateTimestamp);
   await colony.proposeTaskChange(txData, 0, MANAGER_ROLE);
   const transactionId = await colony.getTransactionCount.call();
   await colony.approveTaskChange(transactionId, WORKER_ROLE, { from: worker });
