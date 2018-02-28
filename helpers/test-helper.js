@@ -72,11 +72,14 @@ export async function checkError(promise, isAssert) {
     const tx = await promise;
     txHash = tx.tx;
   } catch (err) {
-    // Make sure this is a revert (returned from EtherRouter)
-    if (err.message.indexOf("VM Exception while processing transaction: revert") === -1) {
+    if (isAssert) {
+      // Make sure this is a revert (returned from EtherRouter)
+      if (err.message.indexOf("VM Exception while processing transaction: invalid opcode") === -1) {
+        throw err;
+      } // Make sure this is a revert (returned from EtherRouter)
+    } else if (err.message.indexOf("VM Exception while processing transaction: revert") === -1) {
       throw err;
     }
-
     txHash = await web3GetFirstTransactionHashFromLastBlock();
   }
 
@@ -171,14 +174,14 @@ export async function forwardTime(seconds, test) {
 
 export async function forwardToBlock(blockNumber) {
   // Check we are behind the given blockNumber
-  let currentBlock = web3.eth.blockNumber;
-  assert.isTrue(currentBlock <= blockNumber);
-  while (currentBlock < blockNumber) {
+  let thisBlock = web3.eth.blockNumber;
+  assert.isTrue(thisBlock <= blockNumber);
+  while (thisBlock < blockNumber) {
     web3.currentProvider.send({
       jsonrpc: "2.0",
       method: "evm_mine"
     });
-    currentBlock = web3.eth.blockNumber;
+    thisBlock = web3.eth.blockNumber;
   }
 }
 

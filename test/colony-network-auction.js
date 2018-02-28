@@ -1,7 +1,7 @@
 /* globals artifacts */
 import { BN } from "bn.js";
 
-import { getTokenArgs, web3GetTransactionReceipt, checkError, forwardToBlock } from "../helpers/test-helper";
+import { getTokenArgs, web3GetTransactionReceipt, checkErrorRevert, forwardToBlock, checkErrorAssert } from "../helpers/test-helper";
 import { giveUserCLNYTokens } from "../helpers/test-data-generator";
 
 const EtherRouter = artifacts.require("EtherRouter");
@@ -19,12 +19,14 @@ contract("ColonyNetworkAuction", accounts => {
   let colonyNetwork;
   let tokenAuction;
   let startBlock;
-  const startPrice = 100;
   const quantity = 3e18;
+  let clnyNeededForMaxPriceAuctionSellout;
   let clny;
   let token;
 
   before(async () => {
+    clnyNeededForMaxPriceAuctionSellout = new BN(10).pow(new BN(55)).muln(2);
+    // TODO console.log("clnyNeededForMaxPriceAuctionSellout", clnyNeededForMaxPriceAuctionSellout.toString());
     const etherRouter = await EtherRouter.deployed();
     colonyNetwork = await IColonyNetwork.at(etherRouter.address);
 
@@ -41,9 +43,10 @@ contract("ColonyNetworkAuction", accounts => {
     token = await Token.new(...args);
     await token.mint(quantity);
     await token.transfer(colonyNetwork.address, quantity);
-    const { tx, logs } = await colonyNetwork.startTokenAuction(token.address, quantity, startPrice);
+    const { tx, logs } = await colonyNetwork.startTokenAuction(token.address);
     const auctionAddress = logs[0].args.auction;
     tokenAuction = await DutchAuction.at(auctionAddress);
+    await tokenAuction.start();
     const receipt = await web3GetTransactionReceipt(tx);
     startBlock = receipt.blockNumber;
   });
@@ -54,37 +57,42 @@ contract("ColonyNetworkAuction", accounts => {
       assert.equal(clnyAddress, clny.address);
       const tokenAddress = await tokenAuction.token.call();
       assert.equal(tokenAddress, token.address);
-      const quantityNow = await tokenAuction.quantity.call();
-      assert.equal(quantityNow.toString(), "3000000000000000000");
-      const startPriceNow = await tokenAuction.startPrice.call();
-      assert.equal(startPrice, startPriceNow.toString());
-    });
-
-    it("should initialise auction with correct start block", async () => {
       const startBlockOnContract = await tokenAuction.startBlock.call();
       assert.equal(startBlockOnContract.toNumber(), startBlock);
+
+      const quantityNow = await tokenAuction.quantity.call();
+      assert.equal(quantityNow.toString(), "3000000000000000000");
+      const started = await tokenAuction.started.call();
+      assert.isTrue(started);
     });
 
     it("should not be able to initialise auction with 0x0 token", async () => {
-      await checkError(colonyNetwork.startTokenAuction("0x0", quantity, startPrice));
+      await checkErrorRevert(colonyNetwork.startTokenAuction("0x0"));
     });
 
-    it("should not be able to initialise auction with zero quantity", async () => {
-      await checkError(colonyNetwork.startTokenAuction(token.address, 0, startPrice));
+    it("should not be able to start auction with zero quantity", async () => {
+      const args = getTokenArgs();
+      const otherToken = await Token.new(...args);
+      const { logs } = await colonyNetwork.startTokenAuction(otherToken.address);
+      const auctionAddress = logs[0].args.auction;
+      tokenAuction = await DutchAuction.at(auctionAddress);
+      await checkErrorAssert(tokenAuction.start());
     });
 
-    it("should not be able to initialise auction with zero start price", async () => {
-      await checkError(colonyNetwork.startTokenAuction(token.address, quantity, 0));
+    it("should not be able to start the auction twice", async () => {
+      await checkErrorRevert(tokenAuction.start());
     });
   });
 
-  describe("when bidding", async () => {
+  describe.only("when bidding", async () => {
     it("can bid", async () => {
       await giveUserCLNYTokens(colonyNetwork, BIDDER_1, "1000000000000000000");
       await clny.approve(tokenAuction.address, "1000000000000000000", { from: BIDDER_1 });
       await tokenAuction.bid("1000000000000000000", { from: BIDDER_1 });
       const bid = await tokenAuction.bids.call(BIDDER_1);
       assert.equal(bid, "1000000000000000000");
+      const bidCount = await tokenAuction.bidCount.call();
+      assert.equal(bidCount.toNumber(), 1);
     });
 
     it("deposit tokens are locked", async () => {
@@ -100,12 +108,14 @@ contract("ColonyNetworkAuction", accounts => {
       await clny.approve(tokenAuction.address, "2000000000000000000", { from: BIDDER_1 });
       await tokenAuction.bid("1100000000000000000", { from: BIDDER_1 });
       await tokenAuction.bid("900000000000000000", { from: BIDDER_1 });
+      const bidCount = await tokenAuction.bidCount.call();
+      assert.equal(bidCount.toNumber(), 1);
     });
 
     it("if bid overshoots the target quantity, it is only partially accepted", async () => {
-      await giveUserCLNYTokens(colonyNetwork, BIDDER_1, "300000000000000000000");
-      await clny.approve(tokenAuction.address, "300000000000000000000", { from: BIDDER_1 });
-      await tokenAuction.bid("300000000000000000000", { from: BIDDER_1 });
+      await giveUserCLNYTokens(colonyNetwork, BIDDER_1, clnyNeededForMaxPriceAuctionSellout.toString());
+      await clny.approve(tokenAuction.address, clnyNeededForMaxPriceAuctionSellout.toString(), { from: BIDDER_1 });
+      await tokenAuction.bid(clnyNeededForMaxPriceAuctionSellout.toString(), { from: BIDDER_1 });
       const totalToEndAuction = await tokenAuction.totalToEndAuction.call();
       const receivedTotal = await tokenAuction.receivedTotal.call();
       const bid = await tokenAuction.bids.call(BIDDER_1);
@@ -114,47 +124,48 @@ contract("ColonyNetworkAuction", accounts => {
     });
 
     it("after target is sold, bid is rejected", async () => {
-      await giveUserCLNYTokens(colonyNetwork, BIDDER_1, "30000000000000000000");
-      await clny.approve(tokenAuction.address, "30000000000000000000", { from: BIDDER_1 });
-      await tokenAuction.bid("20000000000000000000", { from: BIDDER_1 });
-      await checkError(tokenAuction.bid("10000000000000000000", { from: BIDDER_1 }));
+      await giveUserCLNYTokens(colonyNetwork, BIDDER_1, clnyNeededForMaxPriceAuctionSellout.toString());
+      await clny.approve(tokenAuction.address, clnyNeededForMaxPriceAuctionSellout.toString(), { from: BIDDER_1 });
+      await tokenAuction.bid(clnyNeededForMaxPriceAuctionSellout.subn(10000000000000000000).toString(), { from: BIDDER_1 });
+      await checkErrorRevert(tokenAuction.bid("10000000000000000000", { from: BIDDER_1 }));
     });
 
     it("cannot finalize when target not reached", async () => {
       await giveUserCLNYTokens(colonyNetwork, BIDDER_1, "3000");
       await clny.approve(tokenAuction.address, "3000", { from: BIDDER_1 });
       await tokenAuction.bid("3000", { from: BIDDER_1 });
-      await checkError(tokenAuction.finalize());
+      await checkErrorRevert(tokenAuction.finalize());
     });
 
     it("cannot bid with 0 tokens", async () => {
-      await checkError(tokenAuction.bid(0));
+      await checkErrorRevert(tokenAuction.bid(0));
     });
 
+    // Price = 37 - (durationBlocks * 0.0002)
     const auctionVars = [
       {
         block: 0,
-        price: "100000000000000000000",
+        price: new BN(10).pow(new BN(37)).toString(),
         amount: "300000000000000000000"
       },
       {
         block: 1,
-        price: "50000000000000000000",
+        price: new BN(10).pow(new BN(36)).toString(),
         amount: "150000000000000000000"
       },
       {
         block: 10,
-        price: "9090909090909090909",
+        price: new BN(10).pow(new BN(36)).toString(),
         amount: "27272727272727272727"
       },
       {
         block: 29,
-        price: "3333333333333333333",
+        price: new BN(10).pow(new BN(36)).toString(),
         amount: "9999999999999999999"
       },
       {
         block: 45,
-        price: "2173913043478260869",
+        price: new BN(10).pow(new BN(36)).toString(),
         amount: "6521739130434782607"
       }
     ];
@@ -185,7 +196,7 @@ contract("ColonyNetworkAuction", accounts => {
       const elapsedBlocks = endBlock - startBlock;
       const endPrice = new BN(10)
         .pow(new BN(18))
-        .muln(startPrice)
+        .muln(1e18)
         .divn(elapsedBlocks);
       const finalPrice = await tokenAuction.finalPrice.call();
       assert.equal(endPrice.toString(), finalPrice.toString());
@@ -209,16 +220,16 @@ contract("ColonyNetworkAuction", accounts => {
       await tokenAuction.finalize();
       await giveUserCLNYTokens(colonyNetwork, BIDDER_1, 1000);
       await clny.approve(tokenAuction.address, 1000, { from: BIDDER_1 });
-      await checkError(tokenAuction.bid(1000, { from: BIDDER_1 }));
+      await checkErrorRevert(tokenAuction.bid(1000, { from: BIDDER_1 }));
     });
 
     it("cannot finalize after finalized once", async () => {
       await tokenAuction.finalize();
-      await checkError(tokenAuction.finalize());
+      await checkErrorRevert(tokenAuction.finalize());
     });
 
     it("cannot claim if not finalized", async () => {
-      await checkError(tokenAuction.claim({ from: BIDDER_1 }));
+      await checkErrorRevert(tokenAuction.claim({ from: BIDDER_1 }));
     });
   });
 
