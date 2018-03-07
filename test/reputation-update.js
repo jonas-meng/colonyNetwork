@@ -15,7 +15,6 @@ const Resolver = artifacts.require("Resolver");
 const Colony = artifacts.require("Colony");
 const ColonyFunding = artifacts.require("ColonyFunding");
 const ColonyTask = artifacts.require("ColonyTask");
-const ColonyTransactionReviewer = artifacts.require("ColonyTransactionReviewer");
 const Token = artifacts.require("Token");
 
 contract("Colony Reputation Updates", () => {
@@ -32,12 +31,11 @@ contract("Colony Reputation Updates", () => {
     const colony = await Colony.new();
     const colonyFunding = await ColonyFunding.new();
     const colonyTask = await ColonyTask.new();
-    const colonyTransactionReviewer = await ColonyTransactionReviewer.new();
     const resolver = await Resolver.new();
     const etherRouter = await EtherRouter.new();
     await etherRouter.setResolver(resolverColonyNetworkDeployed.address);
     colonyNetwork = await IColonyNetwork.at(etherRouter.address);
-    await setupColonyVersionResolver(colony, colonyTask, colonyFunding, colonyTransactionReviewer, resolver, colonyNetwork);
+    await setupColonyVersionResolver(colony, colonyTask, colonyFunding, resolver, colonyNetwork);
     const tokenArgs = getTokenArgs();
     await colonyNetwork.createColony("Common Colony", ...tokenArgs);
     const commonColonyAddress = await colonyNetwork.getColony.call("Common Colony");
