@@ -253,6 +253,9 @@ contract ColonyNetwork is ColonyNetworkStorage {
   calledByColony
   skillExists(_skillId)
   {
+    /* if (_amount ==0 ){
+      return;
+    } */
     uint reputationUpdateLogLength = ReputationUpdateLogs[activeReputationUpdateLog].length;
     uint nPreviousUpdates = 0;
     if (reputationUpdateLogLength > 0) {
